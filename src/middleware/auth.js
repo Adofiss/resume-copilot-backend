@@ -1,16 +1,35 @@
 import jwt from "jsonwebtoken";
+import jwksClient from "jwks-rsa";
 
 /**
- * Verifies the Bearer token issued by Supabase Auth on login/signup.
- * Attaches req.userId on success.
+ * Verifies the Bearer token issued by Supabase Auth on login/signup, LOCALLY
+ * (no network call to Supabase per request — see below).
  *
- * IMPORTANT: this verifies the JWT signature LOCALLY using SUPABASE_JWT_SECRET,
- * rather than calling supabase.auth.getUser(token) over the network. Supabase
- * signs these tokens with a secret only your server and Supabase know — since
- * we already have that secret, checking the signature ourselves is exactly as
- * secure as asking Supabase to check it for us, but skips a full network
- * round trip on every single authenticated request.
+ * Supabase signs tokens with ES256 (asymmetric public/private key signing)
+ * on newer projects, rather than the older HS256 shared-secret method. With
+ * ES256, there's no shared secret to check a signature against — instead,
+ * verification uses Supabase's PUBLIC signing key, fetched from their JWKS
+ * (JSON Web Key Set) endpoint. This key is public by design (that's the
+ * whole point of asymmetric signing: the public half can be shared freely,
+ * only Supabase holds the private half that actually signs tokens), so
+ * fetching and caching it locally is exactly as secure as asking Supabase
+ * to verify the token for us, but avoids a network round trip on every
+ * single request — jwks-rsa fetches the key once and caches it in memory.
  */
+const client = jwksClient({
+  jwksUri: `${process.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
+  cache: true,
+  cacheMaxAge: 10 * 60 * 1000, // 10 minutes — Supabase's signing keys rotate rarely
+  rateLimit: true
+});
+
+function getSigningKey(header, callback) {
+  client.getSigningKey(header.kid, (err, key) => {
+    if (err) return callback(err);
+    callback(null, key.getPublicKey());
+  });
+}
+
 export async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -19,19 +38,13 @@ export async function requireAuth(req, res, next) {
     return res.status(401).json({ code: "NOT_AUTHENTICATED", message: "Missing bearer token." });
   }
 
-  try {
-    const payload = jwt.verify(token, process.env.SUPABASE_JWT_SECRET, { algorithms: ["HS256"] });
+  jwt.verify(token, getSigningKey, { algorithms: ["ES256"] }, (err, payload) => {
+    if (err) {
+      console.error("JWT verification failed:", err.name, "-", err.message);
+      return res.status(401).json({ code: "NOT_AUTHENTICATED", message: "Invalid or expired token." });
+    }
     req.userId = payload.sub; // Supabase puts the user's UUID in the standard "sub" claim
     req.userEmail = payload.email;
     next();
-  } catch (err) {
-    // Log the specific reason (expired vs bad signature vs wrong algorithm)
-    // plus what algorithm the token actually claims to use — if Supabase
-    // signed this with something other than HS256 (newer Supabase projects
-    // can use asymmetric ES256 signing keys instead of the legacy shared
-    // secret), that alone would explain every token failing, not just old ones.
-    const header = jwt.decode(token, { complete: true })?.header;
-    console.error("JWT verification failed:", err.name, "-", err.message, "| token alg:", header?.alg);
-    return res.status(401).json({ code: "NOT_AUTHENTICATED", message: "Invalid or expired token." });
-  }
+  });
 }
