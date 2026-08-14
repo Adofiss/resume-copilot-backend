@@ -25,7 +25,13 @@ export async function requireAuth(req, res, next) {
     req.userEmail = payload.email;
     next();
   } catch (err) {
-    // Covers expired tokens, bad signatures, and malformed tokens alike.
+    // Log the specific reason (expired vs bad signature vs wrong algorithm)
+    // plus what algorithm the token actually claims to use — if Supabase
+    // signed this with something other than HS256 (newer Supabase projects
+    // can use asymmetric ES256 signing keys instead of the legacy shared
+    // secret), that alone would explain every token failing, not just old ones.
+    const header = jwt.decode(token, { complete: true })?.header;
+    console.error("JWT verification failed:", err.name, "-", err.message, "| token alg:", header?.alg);
     return res.status(401).json({ code: "NOT_AUTHENTICATED", message: "Invalid or expired token." });
   }
 }
