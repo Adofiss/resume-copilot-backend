@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { supabase } from "../services/db.js";
 import { authRateLimit } from "../middleware/rateLimits.js";
+import { verifyTurnstile } from "../services/turnstile.js";
 
 export const authRouter = Router();
 
@@ -12,7 +13,8 @@ authRouter.use(authRateLimit);
 
 const credsSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6)
+  password: z.string().min(6),
+  turnstileToken: z.string().min(1, "Verification required.")
 });
 
 authRouter.post("/signup", async (req, res) => {
@@ -21,7 +23,15 @@ authRouter.post("/signup", async (req, res) => {
     return res.status(400).json({ code: "INVALID_INPUT", message: parsed.error.issues[0].message });
   }
 
-  const { data, error } = await supabase.auth.signUp(parsed.data);
+  const isHuman = await verifyTurnstile(parsed.data.turnstileToken, req.ip);
+  if (!isHuman) {
+    return res.status(400).json({ code: "VERIFICATION_FAILED", message: "Verification failed. Please try again." });
+  }
+
+  const { data, error } = await supabase.auth.signUp({
+    email: parsed.data.email,
+    password: parsed.data.password
+  });
   if (error) return res.status(400).json({ code: "SIGNUP_FAILED", message: error.message });
 
   // With email confirmation enabled (Supabase default), session may be null until confirmed.
@@ -45,7 +55,15 @@ authRouter.post("/login", async (req, res) => {
     return res.status(400).json({ code: "INVALID_INPUT", message: parsed.error.issues[0].message });
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
+  const isHuman = await verifyTurnstile(parsed.data.turnstileToken, req.ip);
+  if (!isHuman) {
+    return res.status(400).json({ code: "VERIFICATION_FAILED", message: "Verification failed. Please try again." });
+  }
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: parsed.data.email,
+    password: parsed.data.password
+  });
   if (error) return res.status(401).json({ code: "LOGIN_FAILED", message: error.message });
 
   res.json({
