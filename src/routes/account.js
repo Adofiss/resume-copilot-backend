@@ -14,14 +14,24 @@ export const accountRouter = Router();
  */
 accountRouter.delete("/", async (req, res) => {
   try {
-    const customerId = await getStripeCustomerId(req.userId);
-    if (customerId) {
-      // List and cancel any active subscriptions for this customer, so a
-      // deleted account can't keep silently billing someone.
-      const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: "active" });
-      for (const sub of subscriptions.data) {
-        await stripe.subscriptions.cancel(sub.id);
+    // Stripe cleanup is best-effort and deliberately isolated from the rest
+    // of this handler: a person's right to delete their account and data
+    // shouldn't be blocked by a billing-system hiccup (e.g. a stale
+    // customer ID from a test-mode/live-mode switch). If this fails, we log
+    // it for manual follow-up but proceed with the actual deletion regardless.
+    try {
+      const customerId = await getStripeCustomerId(req.userId);
+      if (customerId) {
+        const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: "active" });
+        for (const sub of subscriptions.data) {
+          await stripe.subscriptions.cancel(sub.id);
+        }
       }
+    } catch (stripeErr) {
+      console.error(
+        `Stripe cleanup failed during account deletion for user ${req.userId} — proceeding with deletion anyway. Manually verify/cancel their subscription in Stripe. Error:`,
+        stripeErr.message
+      );
     }
 
     await deleteUserAccount(req.userId);
