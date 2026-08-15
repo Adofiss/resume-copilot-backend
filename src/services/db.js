@@ -95,6 +95,17 @@ export async function getCreditBalance(userId) {
   return data?.balance ?? 0;
 }
 
+/** Returns the Stripe customer ID for a subscribed user, or null if they've never subscribed. */
+export async function getStripeCustomerId(userId) {
+  const { data, error } = await supabase
+    .from("subscriptions")
+    .select("stripe_customer_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.stripe_customer_id ?? null;
+}
+
 /** Atomically decrements one credit. Returns false if the user had none left. */
 export async function spendCredit(userId) {
   const { data, error } = await supabase.rpc("spend_credit", { p_user_id: userId });

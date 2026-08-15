@@ -55,6 +55,7 @@ app.use("/api/auth", authRouter);
 // it directly, no user token) — it's already mounted with express.raw()
 // above, before this. Checkout and the credit balance lookup need a user.
 app.use("/api/billing/checkout", requireAuth, checkoutRateLimit);
+app.use("/api/billing/portal", requireAuth);
 app.use("/api/billing/credits", requireAuth);
 app.use("/api/billing", billingRouter);
 

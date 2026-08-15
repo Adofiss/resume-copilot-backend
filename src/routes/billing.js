@@ -1,7 +1,7 @@
 import { Router } from "express";
 import Stripe from "stripe";
 import { z } from "zod";
-import { supabase, addCredits, getCreditBalance } from "../services/db.js";
+import { supabase, addCredits, getCreditBalance, getStripeCustomerId } from "../services/db.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -75,6 +75,38 @@ billingRouter.post("/checkout/credits", async (req, res) => {
   } catch (err) {
     console.error("credit checkout error:", err);
     res.status(502).json({ code: "STRIPE_ERROR", message: "Could not start checkout." });
+  }
+});
+
+/**
+ * Creates a Stripe Customer Portal session — a hosted page Stripe builds
+ * and maintains where the user can view billing history, update their
+ * payment method, and CANCEL their subscription. This is the actual
+ * cancellation mechanism for the app; without it, subscribed users have
+ * no way to cancel from within the product at all.
+ *
+ * Requires the Customer Portal to be activated once in the Stripe
+ * dashboard (Settings -> Billing -> Customer portal) — separately for
+ * test mode and live mode.
+ */
+billingRouter.post("/portal", async (req, res) => {
+  try {
+    const customerId = await getStripeCustomerId(req.userId);
+    if (!customerId) {
+      return res.status(400).json({
+        code: "NO_SUBSCRIPTION",
+        message: "No active subscription to manage yet."
+      });
+    }
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: process.env.PORTAL_RETURN_URL || "https://resume-copilot.com"
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error("billing portal error:", err);
+    res.status(502).json({ code: "STRIPE_ERROR", message: "Could not open billing management." });
   }
 });
 
