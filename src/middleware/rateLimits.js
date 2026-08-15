@@ -1,0 +1,49 @@
+import rateLimit from "express-rate-limit";
+
+/**
+ * Stricter limiter for routes that call a paid external API (Anthropic).
+ * Keyed by authenticated user ID rather than IP address — these routes only
+ * ever run after requireAuth, and per-user is the right unit here: IP-based
+ * limiting is either too loose (many people behind one office/campus IP) or
+ * too strict (one person switching wifi/cellular), whereas your actual cost
+ * exposure is fundamentally per-account regardless of network.
+ *
+ * This matters most for /api/score specifically — it's free and unlimited
+ * by design, so it's the one route nothing else (credits, subscription
+ * checks) naturally throttles. Without this, a script could call it in a
+ * tight loop indefinitely at real cost to you with zero revenue.
+ */
+export const llmRateLimit = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 20, // generous for a real job search, a hard wall for a runaway script
+  keyGenerator: (req) => req.userId,
+  handler: (req, res) => {
+    res.status(429).json({
+      code: "RATE_LIMITED",
+      message: "Too many requests. Please slow down and try again in a few minutes."
+    });
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/**
+ * Lighter limiter for Stripe checkout session creation. Not "paid per call"
+ * the way Anthropic is (a Checkout Session only costs money if someone
+ * actually completes payment), but still worth capping — Stripe has its own
+ * API rate limits, and there's no legitimate reason for one account to spin
+ * up checkout sessions rapidly.
+ */
+export const checkoutRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 10,
+  keyGenerator: (req) => req.userId,
+  handler: (req, res) => {
+    res.status(429).json({
+      code: "RATE_LIMITED",
+      message: "Too many checkout attempts. Please try again in a few minutes."
+    });
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});

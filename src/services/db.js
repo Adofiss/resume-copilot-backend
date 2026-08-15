@@ -27,6 +27,9 @@ export const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPAB
  *   tokens_used int,
  *   created_at timestamptz default now()
  * );
+ * alter table public.usage enable row level security;
+ * -- No policies added deliberately: only service_role (used by this backend)
+ * -- can read/write. anon and authenticated get fully denied by default.
  *
  * alter table public.history enable row level security;
  * create policy "users read own history" on public.history
@@ -39,6 +42,8 @@ export const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPAB
  *   balance int not null default 0,
  *   updated_at timestamptz default now()
  * );
+ * alter table public.credits enable row level security;
+ * -- service_role only, same reasoning as the usage table above.
  *
  * -- Atomic spend so two concurrent requests can't both succeed off the same last credit.
  * create or replace function spend_credit(p_user_id uuid)
@@ -70,6 +75,8 @@ export const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPAB
  *   status text,
  *   updated_at timestamptz default now()
  * );
+ * alter table public.subscriptions enable row level security;
+ * -- service_role only, same reasoning as the usage table above.
  */
 
 export async function logHistory(userId, entry) {

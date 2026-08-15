@@ -12,6 +12,7 @@ import { historyRouter } from "./routes/history.js";
 import { billingRouter } from "./routes/billing.js";
 import { requireAuth } from "./middleware/auth.js";
 import { requireEntitlement } from "./middleware/entitlement.js";
+import { llmRateLimit, checkoutRateLimit } from "./middleware/rateLimits.js";
 
 const app = express();
 
@@ -43,16 +44,21 @@ app.use("/api/auth", authRouter);
 // The webhook sub-route inside billingRouter must stay public (Stripe calls
 // it directly, no user token) — it's already mounted with express.raw()
 // above, before this. Checkout and the credit balance lookup need a user.
-app.use("/api/billing/checkout", requireAuth);
+app.use("/api/billing/checkout", requireAuth, checkoutRateLimit);
 app.use("/api/billing/credits", requireAuth);
 app.use("/api/billing", billingRouter);
 
 // Everything below requires a logged-in user.
-// Score is free and unlimited — auth only, no credit/subscription check.
-app.use("/api/score", requireAuth, scoreRouter);
-// Tailor and cover letter are paid actions: subscription or 1 credit each.
-app.use("/api/tailor", requireAuth, requireEntitlement, tailorRouter);
-app.use("/api/cover-letter", requireAuth, requireEntitlement, coverLetterRouter);
+// Score is free and unlimited — auth only, no credit/subscription check,
+// but it's the one route with no natural cost throttle, so llmRateLimit
+// carries the full weight of protecting it from abuse.
+app.use("/api/score", requireAuth, llmRateLimit, scoreRouter);
+// Tailor and cover letter are paid actions (subscription or 1 credit each)
+// AND rate limited — the credit/subscription check stops cost from being
+// free, but doesn't stop a compromised or scripted subscriber account from
+// firing rapid-fire requests, so both protections apply together.
+app.use("/api/tailor", requireAuth, requireEntitlement, llmRateLimit, tailorRouter);
+app.use("/api/cover-letter", requireAuth, requireEntitlement, llmRateLimit, coverLetterRouter);
 app.use("/api/history", requireAuth, historyRouter);
 
 app.use((err, req, res, next) => {
