@@ -77,6 +77,22 @@ export const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPAB
  * );
  * alter table public.subscriptions enable row level security;
  * -- service_role only, same reasoning as the usage table above.
+ *
+ * -- Testimonial submissions. Deliberately NOT auto-published — status
+ * -- starts 'pending' and stays there until a human manually reviews it
+ * -- and copies approved ones into the marketing site. See account.js.
+ * create table public.testimonials (
+ *   id uuid primary key default gen_random_uuid(),
+ *   user_id uuid references auth.users(id) not null,
+ *   quote text not null,
+ *   rating int,
+ *   display_name text,
+ *   consent_to_publish boolean not null default false,
+ *   status text not null default 'pending', -- 'pending' | 'approved' | 'rejected'
+ *   created_at timestamptz default now()
+ * );
+ * alter table public.testimonials enable row level security;
+ * -- service_role only — no anon/authenticated policies added.
  */
 
 export async function logHistory(userId, entry) {
@@ -126,4 +142,39 @@ export async function getHistory(userId) {
     .limit(100);
   if (error) throw error;
   return data;
+}
+
+/**
+ * Permanently deletes everything associated with a user: every row across
+ * history, usage, credits, and subscriptions, then the Supabase auth user
+ * itself. This is destructive and irreversible — the route calling this
+ * must independently cancel any active Stripe subscription BEFORE calling
+ * this, since once the subscriptions row is gone we lose the stripe
+ * customer/subscription IDs needed to do that.
+ */
+export async function deleteUserAccount(userId) {
+  // Delete child data first — not strictly required (no FK cascade errors
+  // expected either way since these reference auth.users, not each other),
+  // but keeps intent explicit and makes partial-failure states easier to
+  // reason about if something goes wrong mid-deletion.
+  await supabase.from("history").delete().eq("user_id", userId);
+  await supabase.from("usage").delete().eq("user_id", userId);
+  await supabase.from("credits").delete().eq("user_id", userId);
+  await supabase.from("subscriptions").delete().eq("user_id", userId);
+
+  // Deletes the actual login — requires the service_role key's admin API,
+  // which is why this can only run on the backend, never client-side.
+  const { error } = await supabase.auth.admin.deleteUser(userId);
+  if (error) throw error;
+}
+
+export async function submitTestimonial(userId, { quote, rating, displayName, consentToPublish }) {
+  const { error } = await supabase.from("testimonials").insert({
+    user_id: userId,
+    quote,
+    rating: rating ?? null,
+    display_name: displayName ?? null,
+    consent_to_publish: consentToPublish
+  });
+  if (error) throw error;
 }

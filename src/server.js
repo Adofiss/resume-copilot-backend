@@ -11,6 +11,8 @@ import { tailorRouter } from "./routes/tailor.js";
 import { coverLetterRouter } from "./routes/coverLetter.js";
 import { historyRouter } from "./routes/history.js";
 import { billingRouter } from "./routes/billing.js";
+import { accountRouter } from "./routes/account.js";
+import { testimonialsRouter } from "./routes/testimonials.js";
 import { requireAuth } from "./middleware/auth.js";
 import { requireEntitlement } from "./middleware/entitlement.js";
 import { llmRateLimit, checkoutRateLimit } from "./middleware/rateLimits.js";
@@ -71,6 +73,8 @@ app.use("/api/score", requireAuth, llmRateLimit, scoreRouter);
 app.use("/api/tailor", requireAuth, requireEntitlement, llmRateLimit, tailorRouter);
 app.use("/api/cover-letter", requireAuth, requireEntitlement, llmRateLimit, coverLetterRouter);
 app.use("/api/history", requireAuth, historyRouter);
+app.use("/api/account", requireAuth, accountRouter);
+app.use("/api/testimonials", requireAuth, testimonialsRouter);
 
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
