@@ -30,7 +30,10 @@ authRouter.post("/signup", async (req, res) => {
 
   const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
-    password: parsed.data.password
+    password: parsed.data.password,
+    options: {
+      emailRedirectTo: process.env.EMAIL_CONFIRM_REDIRECT_URL || "https://resume-copilot.com/email-confirmed"
+    }
   });
   if (error) return res.status(400).json({ code: "SIGNUP_FAILED", message: error.message });
 
