@@ -6,7 +6,7 @@ export const authRouter = Router();
 
 const credsSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8)
+  password: z.string().min(6)
 });
 
 authRouter.post("/signup", async (req, res) => {
@@ -47,6 +47,34 @@ authRouter.post("/login", async (req, res) => {
     refreshToken: data.session.refresh_token,
     user: { email: data.user.email, id: data.user.id }
   });
+});
+
+/**
+ * Triggers Supabase's built-in password reset email. The email contains a
+ * link back to a hosted page (redirectTo below) where the person actually
+ * sets their new password — that page runs entirely client-side using
+ * Supabase's public anon key, since a password reset session is meant to be
+ * established directly in the browser, not proxied through this backend.
+ */
+authRouter.post("/forgot-password", async (req, res) => {
+  const email = req.body?.email;
+  const parsed = z.string().email().safeParse(email);
+  if (!parsed.success) {
+    return res.status(400).json({ code: "INVALID_INPUT", message: "Enter a valid email address." });
+  }
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: process.env.RESET_PASSWORD_URL || "https://resume-copilot.com/reset-password"
+  });
+
+  // Deliberately don't reveal whether the email exists — always respond
+  // success-shaped, so this endpoint can't be used to check which emails
+  // have accounts. Only a genuine send failure surfaces as an error.
+  if (error) {
+    console.error("forgot-password error:", error.message);
+  }
+
+  res.json({ message: "If that email has an account, a reset link is on its way." });
 });
 
 /**
