@@ -1,8 +1,14 @@
 import { Router } from "express";
 import { z } from "zod";
 import { supabase } from "../services/db.js";
+import { authRateLimit } from "../middleware/rateLimits.js";
 
 export const authRouter = Router();
+
+// Applied to every route in this router: login, signup, forgot-password,
+// and refresh are all pre-auth or credential-related, so all of them get
+// the strict brute-force protection, not just login.
+authRouter.use(authRateLimit);
 
 const credsSchema = z.object({
   email: z.string().email(),

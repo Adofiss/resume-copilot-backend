@@ -28,6 +28,28 @@ export const llmRateLimit = rateLimit({
 });
 
 /**
+ * Strict limiter for login/signup/password-reset — these run BEFORE
+ * authentication, so there's no req.userId to key on yet. Keyed by IP
+ * instead, which is exactly right here: brute-forcing a password or mass-
+ * creating accounts is fundamentally about repeated attempts from a source,
+ * and this is the one place in the app where IP is the correct unit rather
+ * than user ID.
+ */
+export const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per IP per 15 min — enough for a real person who
+           // mistypes a password a few times, a hard wall for brute force
+  handler: (req, res) => {
+    res.status(429).json({
+      code: "RATE_LIMITED",
+      message: "Too many attempts. Please wait a few minutes and try again."
+    });
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/**
  * Lighter limiter for Stripe checkout session creation. Not "paid per call"
  * the way Anthropic is (a Checkout Session only costs money if someone
  * actually completes payment), but still worth capping — Stripe has its own

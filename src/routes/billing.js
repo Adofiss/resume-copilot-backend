@@ -1,5 +1,6 @@
 import { Router } from "express";
 import Stripe from "stripe";
+import { z } from "zod";
 import { supabase, addCredits, getCreditBalance } from "../services/db.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -49,8 +50,13 @@ const CREDIT_PACKS = {
 
 /** Creates a one-time-payment Checkout session for a credit pack. */
 billingRouter.post("/checkout/credits", async (req, res) => {
-  const pack = CREDIT_PACKS[req.body?.pack];
-  if (!pack || !pack.priceId) {
+  const parsed = z.object({ pack: z.enum(["single", "ten"]) }).safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ code: "INVALID_INPUT", message: "pack must be 'single' or 'ten'." });
+  }
+
+  const pack = CREDIT_PACKS[parsed.data.pack];
+  if (!pack.priceId) {
     return res.status(400).json({ code: "INVALID_INPUT", message: "Unknown or unconfigured credit pack." });
   }
 

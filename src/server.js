@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import compression from "compression";
+import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 
 import { authRouter } from "./routes/auth.js";
@@ -25,6 +26,15 @@ const app = express();
 app.set("trust proxy", 1);
 
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(",") ?? "*" }));
+
+// Sets a standard set of security-related HTTP headers (X-Content-Type-Options,
+// X-Frame-Options, Strict-Transport-Security, etc). This is a pure JSON API
+// with no HTML pages of its own, so helmet's default CSP (meant for pages
+// that render markup) is disabled — it has nothing to protect here and would
+// only add noise. HSTS stays on: it tells browsers to always use HTTPS for
+// this domain going forward, reinforcing what Railway's edge already enforces.
+app.use(helmet({ contentSecurityPolicy: false }));
+
 app.use(compression());
 
 // Stripe webhook needs the raw body for signature verification, so it must
